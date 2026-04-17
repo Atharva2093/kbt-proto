@@ -1,6 +1,8 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,58 +13,62 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Download, Send, TrendingDown, DollarSign, Clock } from "lucide-react"
-
-const materials = [
-  {
-    layer: 1,
-    name: "Aerogel Insulation Panel",
-    quantity: "45 m²",
-    unitCost: "$85.00",
-    totalCost: "$3,825.00",
-  },
-  {
-    layer: 2,
-    name: "High-Density Mineral Wool",
-    quantity: "45 m²",
-    unitCost: "$32.00",
-    totalCost: "$1,440.00",
-  },
-  {
-    layer: 3,
-    name: "Vapor Barrier Membrane",
-    quantity: "50 m²",
-    unitCost: "$4.50",
-    totalCost: "$225.00",
-  },
-  {
-    layer: 4,
-    name: "Fiber Cement Board",
-    quantity: "45 m²",
-    unitCost: "$18.00",
-    totalCost: "$810.00",
-  },
-  {
-    layer: 5,
-    name: "Fasteners & Adhesives Kit",
-    quantity: "2 sets",
-    unitCost: "$120.00",
-    totalCost: "$240.00",
-  },
-  {
-    layer: 6,
-    name: "Sealant & Tape Bundle",
-    quantity: "3 sets",
-    unitCost: "$45.00",
-    totalCost: "$135.00",
-  },
-]
-
-const totalMaterialCost = materials.reduce((sum, m) => {
-  return sum + parseFloat(m.totalCost.replace("$", "").replace(",", ""))
-}, 0)
+import { Download, Send, TrendingDown, DollarSign, Clock, Loader2 } from "lucide-react"
+import { useAuth } from "@/context/auth-context"
+import { toast } from "sonner"
 
 export default function MaterialsPage() {
+  const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const projectId = searchParams.get("projectId")
+
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<any>(null)
+
+  useEffect(() => {
+    async function fetchProcurement() {
+      if (!user || !projectId) {
+          setLoading(false)
+          return
+      }
+      try {
+        const token = await user.getIdToken()
+        const res = await fetch(`/api/procurement?projectId=${projectId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        const json = await res.json()
+        if (json.error) throw new Error(json.error)
+        setData(json)
+      } catch (err: any) {
+        toast.error("Failed to load material requirements")
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchProcurement()
+  }, [user, projectId])
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <DollarSign className="h-12 w-12 text-muted-foreground" />
+        <h2 className="mt-4 text-xl font-semibold text-foreground">No Procurement Data</h2>
+        <p className="text-muted-foreground">Please run a thermal analysis first to generate material requirements.</p>
+        <Link href="/dashboard/thermal-analysis">
+            <Button className="mt-6">Go to Analysis</Button>
+        </Link>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -93,8 +99,8 @@ export default function MaterialsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {materials.map((material) => (
-                      <TableRow key={material.layer} className="border-border">
+                    {data.items.map((material: any, i: number) => (
+                      <TableRow key={i} className="border-border">
                         <TableCell className="font-medium text-foreground">
                           {material.layer}
                         </TableCell>
@@ -117,7 +123,7 @@ export default function MaterialsPage() {
                         Total Material Cost
                       </TableCell>
                       <TableCell className="text-right text-lg font-bold text-primary">
-                        ${totalMaterialCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        ${data.totalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </TableCell>
                     </TableRow>
                   </TableBody>
@@ -143,7 +149,7 @@ export default function MaterialsPage() {
                     </span>
                   </div>
                   <span className="font-semibold text-foreground">
-                    ${totalMaterialCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    ${data.totalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -153,7 +159,9 @@ export default function MaterialsPage() {
                       Est. Annual Savings
                     </span>
                   </div>
-                  <span className="font-semibold text-primary">$2,840/year</span>
+                  <span className="font-semibold text-primary">
+                    ${data.savings?.annual || "0"}/year
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -162,14 +170,16 @@ export default function MaterialsPage() {
                       Payback Period
                     </span>
                   </div>
-                  <span className="font-semibold text-foreground">2.4 years</span>
+                  <span className="font-semibold text-foreground">
+                    {data.savings?.payback || "N/A"} years
+                  </span>
                 </div>
               </div>
 
               <div className="rounded-lg bg-primary/10 p-4">
                 <p className="text-sm text-foreground">
                   Your optimized wall design will pay for itself in{" "}
-                  <span className="font-semibold text-primary">2.4 years</span>{" "}
+                  <span className="font-semibold text-primary">{data.savings?.payback || "N/A"} years</span>{" "}
                   through reduced energy costs.
                 </p>
               </div>
@@ -181,7 +191,7 @@ export default function MaterialsPage() {
               <Download className="h-4 w-4" />
               Download Report
             </Button>
-            <Link href="/dashboard/procurement">
+            <Link href={`/dashboard/procurement?projectId=${projectId}`}>
               <Button className="w-full gap-2">
                 <Send className="h-4 w-4" />
                 Send to Procurement

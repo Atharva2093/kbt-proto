@@ -1,5 +1,7 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -24,55 +26,207 @@ import {
   Thermometer,
   Zap,
   DollarSign,
+  Loader2,
+  FileText,
+  Plus,
+  ArrowRight,
+  Printer,
 } from "lucide-react"
-
-const temperatureData = [
-  { position: 0, temp: 22, label: "Inside" },
-  { position: 25, temp: 21 },
-  { position: 50, temp: 18 },
-  { position: 75, temp: 14 },
-  { position: 100, temp: 8 },
-  { position: 125, temp: 2 },
-  { position: 139, temp: -5, label: "Outside" },
-]
-
-const energySavingsData = [
-  { month: "Jan", original: 850, optimized: 420 },
-  { month: "Feb", original: 780, optimized: 390 },
-  { month: "Mar", original: 620, optimized: 310 },
-  { month: "Apr", original: 450, optimized: 230 },
-  { month: "May", original: 280, optimized: 150 },
-  { month: "Jun", original: 180, optimized: 100 },
-]
-
-const wallLayers = [
-  { name: "Aerogel Panel", thickness: 25, color: "bg-cyan-400" },
-  { name: "Mineral Wool", thickness: 100, color: "bg-cyan-500" },
-  { name: "Vapor Barrier", thickness: 2, color: "bg-cyan-600" },
-  { name: "Cement Board", thickness: 12, color: "bg-cyan-700" },
-]
+import { useAuth } from "@/context/auth-context"
+import { toast } from "sonner"
+import Link from "next/link"
 
 export default function ReportsPage() {
+  const { user } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const reportId = searchParams.get("id")
+  const projectId = searchParams.get("projectId")
+
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(false)
+  const [reports, setReports] = useState<any[]>([])
+  const [data, setData] = useState<any>(null)
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchData() {
+      if (!user) return
+      setLoading(true)
+      try {
+        const token = await user.getIdToken()
+        
+        if (reportId) {
+            const res = await fetch(`/api/reports?id=${reportId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal: controller.signal
+            })
+            const json = await res.json()
+            if (!controller.signal.aborted) {
+                setData(json)
+            }
+        } else {
+            const url = projectId 
+                ? `/api/reports?projectId=${projectId}`
+                : `/api/reports`
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal: controller.signal
+            })
+            const json = await res.json()
+            if (!controller.signal.aborted) {
+                setReports(json)
+            }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          toast.error("Failed to load report data")
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchData()
+    return () => controller.abort();
+  }, [user, reportId, projectId])
+
+  const handleGenerate = async (pId: string) => {
+    if (!user) return
+    setActing(true)
+    try {
+        const token = await user.getIdToken()
+        const res = await fetch("/api/reports/generate", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}` 
+            },
+            body: JSON.stringify({ projectId: pId })
+        })
+        const json = await res.json()
+        if (json.error) throw new Error(json.error)
+        toast.success("Engineering report generated successfully")
+        router.push(`/dashboard/reports?id=${json.id}`)
+    } catch (err: any) {
+        toast.error(err.message || "Failed to generate report")
+    } finally {
+        setActing(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  // --- RENDERING LIST MODE ---
+  if (!reportId) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Engineering Reports</h1>
+            <p className="text-muted-foreground">Historical snapshots of thermal analyses and procurement specs</p>
+          </div>
+          {projectId && (
+            <Button onClick={() => handleGenerate(projectId)} disabled={acting}>
+              {acting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Generate New Report
+            </Button>
+          )}
+        </div>
+
+        {reports.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-border rounded-xl">
+            <FileText className="h-12 w-12 text-muted-foreground" />
+            <h2 className="mt-4 text-xl font-semibold text-foreground">No Reports Found</h2>
+            <p className="text-muted-foreground">Generate a report from the Project or Procurement pages.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {reports.map((report) => (
+              <Card key={report.id} className="hover:border-primary/50 transition-colors group">
+                <CardContent className="p-0">
+                  <Link href={`/dashboard/reports?id=${report.id}`} className="flex items-center justify-between p-6">
+                    <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <FileText className="h-6 w-6" />
+                        </div>
+                        <div>
+                            <p className="font-semibold text-foreground group-hover:text-primary transition-colors">{report.type}</p>
+                            <p className="text-sm text-muted-foreground">Project: {report.project.name} • {new Date(report.createdAt).toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <Badge variant="outline">{report.status}</Badge>
+                        <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                    </div>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // --- RENDERING VIEW MODE (Snapshot) ---
+  if (!data || !data.data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <FileText className="h-12 w-12 text-muted-foreground" />
+        <h2 className="mt-4 text-xl font-semibold text-foreground">Report Not Found</h2>
+        <p className="text-muted-foreground">The specific report snapshot could not be loaded.</p>
+        <Button className="mt-6" onClick={() => router.push("/dashboard/reports")}>Back to Reports List</Button>
+      </div>
+    )
+  }
+
+  const snapshot = data.data
+  const analysis = snapshot.analysis
+  const project = snapshot.project
+  const procurement = snapshot.procurement
+
+  const temperatureData = analysis.details?.tempProfile || []
+  const efficiency = analysis.efficiency || 0
+  
+  const energySavingsData = [
+    { month: "Jan", original: 850, optimized: 850 * (1 - (efficiency/100)) },
+    { month: "Feb", original: 780, optimized: 780 * (1 - (efficiency/100)) },
+    { month: "Mar", original: 620, optimized: 620 * (1 - (efficiency/100)) },
+    { month: "Apr", original: 450, optimized: 450 * (1 - (efficiency/100)) },
+    { month: "May", original: 280, optimized: 280 * (1 - (efficiency/100)) },
+    { month: "Jun", original: 180, optimized: 180 * (1 - (efficiency/100)) },
+  ]
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:space-y-8 print:p-0">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between print:mb-8">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
-            Engineering Report
+            {data.type}
           </h1>
           <p className="text-muted-foreground">
-            Comprehensive thermal analysis report for your project
+            Historical snapshot of thermal data for {project.name}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="gap-2">
-            <Share2 className="h-4 w-4" />
-            Share Report
+        <div className="flex gap-2 print:hidden">
+          <Button variant="outline" className="gap-2" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            Print Report
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => toast.info("Download coming soon")}>
             <Download className="h-4 w-4" />
-            Download PDF
+            Export Data
           </Button>
         </div>
       </div>
@@ -80,7 +234,7 @@ export default function ReportsPage() {
       {/* Project Overview */}
       <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-lg">Project Overview</CardTitle>
+          <CardTitle className="text-lg">Project Metadata</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -90,9 +244,7 @@ export default function ReportsPage() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Project Name</p>
-                <p className="font-medium text-foreground">
-                  Office Building Alpha
-                </p>
+                <p className="font-medium text-foreground">{project.name}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -100,9 +252,9 @@ export default function ReportsPage() {
                 <Calendar className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Report Date</p>
+                <p className="text-xs text-muted-foreground">Generated Date</p>
                 <p className="font-medium text-foreground">
-                  {new Date().toLocaleDateString("en-US", {
+                  {new Date(data.createdAt).toLocaleDateString("en-US", {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
@@ -115,8 +267,8 @@ export default function ReportsPage() {
                 <MapPin className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Climate Zone</p>
-                <p className="font-medium text-foreground">Zone 4 - Mixed</p>
+                <p className="text-xs text-muted-foreground">Zone</p>
+                <p className="font-medium text-foreground">{project.climateZone || "N/A"}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -124,8 +276,8 @@ export default function ReportsPage() {
                 <Ruler className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Wall Area</p>
-                <p className="font-medium text-foreground">450 m²</p>
+                <p className="text-xs text-muted-foreground">Design U-Value</p>
+                <p className="font-medium text-foreground">{analysis.uValue?.toFixed(3)} W/m²K</p>
               </div>
             </div>
           </div>
@@ -133,57 +285,41 @@ export default function ReportsPage() {
       </Card>
 
       {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2 print:grid-cols-1 print:gap-12">
         {/* Temperature Distribution */}
-        <Card className="border-border bg-card">
+        <Card className="border-border bg-card break-inside-avoid">
           <CardHeader>
-            <CardTitle className="text-lg">Temperature Distribution</CardTitle>
+            <CardTitle className="text-lg">Thermal Gradient Profile</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={temperatureData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                   <XAxis
                     dataKey="position"
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                    label={{
-                      value: "Wall Thickness (mm)",
-                      position: "insideBottom",
-                      offset: -5,
-                      fill: "hsl(var(--muted-foreground))",
-                      fontSize: 12,
-                    }}
+                    stroke="#CBD5F5"
+                    tick={{ fill: "#CBD5F5", fontSize: 12 }}
+                    tickFormatter={(val) => `${val}mm`}
                   />
                   <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                    label={{
-                      value: "Temp (°C)",
-                      angle: -90,
-                      position: "insideLeft",
-                      fill: "hsl(var(--muted-foreground))",
-                      fontSize: 12,
-                    }}
+                    stroke="#CBD5F5"
+                    tick={{ fill: "#CBD5F5", fontSize: 12 }}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      color: "hsl(var(--foreground))",
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      color: "#fff"
                     }}
                   />
                   <Line
                     type="monotone"
                     dataKey="temp"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ fill: "hsl(var(--primary))", strokeWidth: 0 }}
+                    stroke="#22C55E"
+                    strokeWidth={3}
+                    dot={{ fill: "#22C55E", strokeWidth: 0 }}
+                    isAnimationActive={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -192,128 +328,35 @@ export default function ReportsPage() {
         </Card>
 
         {/* Energy Savings Comparison */}
-        <Card className="border-border bg-card">
+        <Card className="border-border bg-card break-inside-avoid">
           <CardHeader>
-            <CardTitle className="text-lg">
-              Monthly Energy Cost Comparison
-            </CardTitle>
+            <CardTitle className="text-lg">Projected Savings Impact</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={energySavingsData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(var(--border))"
-                  />
-                  <XAxis
-                    dataKey="month"
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                  />
-                  <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                    label={{
-                      value: "Cost ($)",
-                      angle: -90,
-                      position: "insideLeft",
-                      fill: "hsl(var(--muted-foreground))",
-                      fontSize: 12,
-                    }}
-                  />
-                  <Tooltip
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                  <XAxis dataKey="month" stroke="#CBD5F5" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="#CBD5F5" tick={{ fontSize: 12 }} />
+                  <Tooltip 
                     contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      color: "hsl(var(--foreground))",
+                      backgroundColor: "#0f172a",
+                      border: "1px solid #334155",
+                      color: "#fff"
                     }}
                   />
-                  <Bar
-                    dataKey="original"
-                    fill="hsl(var(--muted-foreground))"
-                    name="Original Design"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="optimized"
-                    fill="hsl(var(--primary))"
-                    name="Optimized Design"
-                    radius={[4, 4, 0, 0]}
-                  />
+                  <Bar dataKey="original" fill="#3B82F6" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="optimized" fill="#22C55E" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-            <div className="mt-4 flex justify-center gap-6">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded bg-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  Original Design
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded bg-primary" />
-                <span className="text-sm text-muted-foreground">
-                  Optimized Design
-                </span>
-              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Wall Design Diagram */}
-      <Card className="border-border bg-card">
-        <CardHeader>
-          <CardTitle className="text-lg">Optimized Wall Design</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center gap-6 lg:flex-row">
-            <div className="flex w-full max-w-md gap-1">
-              {wallLayers.map((layer, i) => (
-                <div
-                  key={i}
-                  className="flex flex-col items-center"
-                  style={{ flex: layer.thickness }}
-                >
-                  <div
-                    className={`h-32 w-full rounded ${layer.color}`}
-                    title={layer.name}
-                  />
-                  <span className="mt-2 text-center text-xs text-muted-foreground">
-                    {layer.name}
-                  </span>
-                  <span className="text-xs font-medium text-foreground">
-                    {layer.thickness}mm
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="grid flex-1 gap-4 sm:grid-cols-2">
-              <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                <p className="text-sm text-muted-foreground">Total Thickness</p>
-                <p className="text-2xl font-bold text-foreground">139 mm</p>
-              </div>
-              <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                <p className="text-sm text-muted-foreground">U-Value</p>
-                <p className="text-2xl font-bold text-primary">0.24 W/m²K</p>
-              </div>
-              <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                <p className="text-sm text-muted-foreground">R-Value</p>
-                <p className="text-2xl font-bold text-foreground">4.17 m²K/W</p>
-              </div>
-              <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                <p className="text-sm text-muted-foreground">Rating</p>
-                <Badge className="mt-1 bg-primary/20 text-primary">A+ Grade</Badge>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Summary Cards */}
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-3 print:grid-cols-3 print:gap-4">
         <Card className="border-border bg-card">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -321,11 +364,8 @@ export default function ReportsPage() {
                 <Thermometer className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Heat Loss Reduction</p>
-                <p className="text-3xl font-bold text-foreground">62%</p>
-                <p className="text-xs text-muted-foreground">
-                  vs. original design
-                </p>
+                <p className="text-sm text-muted-foreground">System Efficiency</p>
+                <p className="text-3xl font-bold text-foreground">{efficiency}%</p>
               </div>
             </div>
           </CardContent>
@@ -337,11 +377,8 @@ export default function ReportsPage() {
                 <Zap className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Annual Energy Savings</p>
+                <p className="text-sm text-muted-foreground">Annual Energy Gap</p>
                 <p className="text-3xl font-bold text-foreground">$2,840</p>
-                <p className="text-xs text-muted-foreground">
-                  projected yearly
-                </p>
               </div>
             </div>
           </CardContent>
@@ -353,16 +390,44 @@ export default function ReportsPage() {
                 <DollarSign className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Material Cost</p>
-                <p className="text-3xl font-bold text-foreground">$6,675</p>
-                <p className="text-xs text-muted-foreground">
-                  2.4 year payback
-                </p>
+                <p className="text-sm text-muted-foreground">Material Investment</p>
+                <p className="text-3xl font-bold text-foreground">${procurement?.totalCost?.toLocaleString() || "0"}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Material Specification (Print Only / Details) */}
+      {procurement && (
+        <Card className="border-border bg-card break-before-page">
+            <CardHeader>
+                <CardTitle className="text-lg">Material Specifications</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead>
+                            <tr className="border-b border-border text-muted-foreground font-medium">
+                                <th className="pb-3 pr-4">Material</th>
+                                <th className="pb-3 px-4">Quantity</th>
+                                <th className="pb-3 pl-4 text-right">Total Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                            {procurement.items.map((item: any, idx: number) => (
+                                <tr key={idx}>
+                                    <td className="py-4 pr-4 font-medium text-foreground">{item.name}</td>
+                                    <td className="py-4 px-4 text-muted-foreground">{item.quantity}</td>
+                                    <td className="py-4 pl-4 text-right font-medium text-foreground">{item.totalCost}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

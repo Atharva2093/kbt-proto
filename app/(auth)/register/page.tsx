@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { signup, loginWithGoogle, syncUser } from "@/lib/auth"
+
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,65 +11,44 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 
+import { useAuth } from "@/context/auth-context"
+import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
 export default function RegisterPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  })
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  
+  const handleGoogleLogin = async () => {
     setLoading(true)
-
     try {
-      const result = await signup(formData.email, formData.password)
-      console.log("[REGISTER_EMAIL] Firebase signup success:", result.user.email);
+      const provider = new GoogleAuthProvider()
+      const result = await signInWithPopup(auth, provider)
+      const token = await result.user.getIdToken()
 
-      await syncUser(result.user);
+      const res = await fetch("/api/auth/sync", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
 
-      toast.success("Account created successfully. Logged in.")
+      if (!res.ok) throw new Error("SYNC_FAILED")
+
+      toast.success("Account synced successfully")
       router.push("/dashboard")
-      router.refresh()
     } catch (error: any) {
-      console.error("[REGISTER_EMAIL] Error:", error.code, error.message)
-      if (error.message === "SYNC_FAILED") {
-        toast.error("Registration succeeded but account setup failed. Please try again.")
-      } else if (error.code === "auth/configuration-not-found") {
-        toast.error("Account creation is not enabled in your Firebase Console. Please enable Email/Password in the Authentication tab.")
-      } else {
-        toast.error(error.message || "Failed to create account")
-      }
+      console.error("[REGISTER_ERROR]", error)
+      toast.error("Registration failed. Please try again.")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleGoogleLogin = async () => {
-    setLoading(true)
-    try {
-      const result = await loginWithGoogle()
-      const user = result.user;
-      console.log("[REGISTER_GOOGLE] Firebase signup success:", user.email);
-
-      await syncUser(user);
-      
-      toast.success("Account created with Google")
-      router.push("/dashboard")
-      router.refresh()
-    } catch (error: any) {
-      console.error("[REGISTER_GOOGLE] Error:", error.code, error.message)
-      if (error.message === "SYNC_FAILED") {
-        toast.error("Registration succeeded but account setup failed. Please try again.")
-      } else if (error.code === "auth/configuration-not-found") {
-        toast.error("Google signup is not enabled in your Firebase Console. Please enable it in the Authentication tab.")
-      } else if (error.code !== "auth/popup-closed-by-user" && error.code !== "auth/cancelled-by-user") {
-        toast.error(error.message || "Failed to sign up with Google")
-      }
-    } finally {
-      setLoading(false)
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    toast.info("Email registration is currently restricted. Please use Google.")
   }
 
   return (

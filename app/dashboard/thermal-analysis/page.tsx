@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,20 +23,12 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts"
-import { Plus, Trash2, Play, Thermometer, Gauge, Award } from "lucide-react"
-
-const temperatureData = [
-  { position: 0, temp: 22 },
-  { position: 50, temp: 20 },
-  { position: 100, temp: 16 },
-  { position: 150, temp: 10 },
-  { position: 200, temp: 5 },
-  { position: 250, temp: 0 },
-  { position: 300, temp: -5 },
-]
+import { Plus, Trash2, Play, Thermometer, Gauge, Award, Loader2 } from "lucide-react"
+import { useAuth } from "@/context/auth-context"
+import { toast } from "sonner"
 
 interface WallLayer {
-  id: number
+  id: string
   material: string
   conductivity: string
   density: string
@@ -43,27 +36,106 @@ interface WallLayer {
 }
 
 export default function ThermalAnalysisPage() {
+  const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const projectId = searchParams.get("projectId")
+
   const [layers, setLayers] = useState<WallLayer[]>([
-    { id: 1, material: "Brick", conductivity: "0.72", density: "1920", thickness: "100" },
-    { id: 2, material: "Insulation", conductivity: "0.04", density: "30", thickness: "80" },
-    { id: 3, material: "Concrete", conductivity: "1.28", density: "2300", thickness: "150" },
+    { id: "1", material: "Brick", conductivity: "0.72", density: "1920", thickness: "100" },
+    { id: "2", material: "Mineral Wool", conductivity: "0.04", density: "30", thickness: "80" },
   ])
-  const [analysisRun, setAnalysisRun] = useState(false)
+  const [boundary, setBoundary] = useState({ inside: 22, outside: -5, area: 450 })
+  const [materials, setMaterials] = useState<any[]>([])
+  const [results, setResults] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function init() {
+      if (!user) return
+      try {
+        const token = await user.getIdToken()
+        
+        // Fetch Materials
+        const mRes = await fetch("/api/materials", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        })
+        const materialsData = await mRes.json()
+
+        if (!controller.signal.aborted) {
+          setMaterials(materialsData)
+        }
+
+        // Fetch Project if ID exists
+        if (projectId && !controller.signal.aborted) {
+          const pRes = await fetch(`/api/projects`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal
+          })
+          const projects = await pRes.json()
+          const p = projects.find((x: any) => x.id === projectId)
+          
+          if (p && !controller.signal.aborted) {
+             // Logic to load layers if we had a GET endpoint for specific project
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          toast.error("Failed to initialize analysis")
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setInitialLoading(false)
+        }
+      }
+    }
+
+    init()
+    return () => controller.abort();
+  }, [user, projectId])
 
   const addLayer = () => {
-    const newId = layers.length > 0 ? Math.max(...layers.map((l) => l.id)) + 1 : 1
     setLayers([
       ...layers,
-      { id: newId, material: "", conductivity: "", density: "", thickness: "" },
+      { id: Date.now().toString(), material: "", conductivity: "", density: "", thickness: "" },
     ])
   }
 
-  const removeLayer = (id: number) => {
+  const removeLayer = (id: string) => {
     setLayers(layers.filter((l) => l.id !== id))
   }
 
-  const runAnalysis = () => {
-    setAnalysisRun(true)
+  const runAnalysis = async () => {
+    if (!projectId) return toast.error("Please select or create a project first")
+    setLoading(true)
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch("/api/analysis/calculate", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          projectId,
+          layers,
+          area: boundary.area,
+          insideTemp: boundary.inside,
+          outsideTemp: boundary.outside
+        })
+      })
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setResults(json)
+      toast.success("Analysis complete")
+    } catch (err: any) {
+      toast.error(err.message || "Calculation failed")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -79,35 +151,26 @@ export default function ThermalAnalysisPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Input Form */}
         <div className="space-y-6">
-          {/* Project Info */}
+          {/* Project Info - Replaced static project name with actual context if available */}
           <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-lg">Project Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="project-name">Project Name</Label>
-                <Input id="project-name" defaultValue="Office Building Alpha" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="climate-zone">Climate Zone</Label>
-                <Select defaultValue="zone-4">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="zone-1">Zone 1 - Very Hot</SelectItem>
-                    <SelectItem value="zone-2">Zone 2 - Hot</SelectItem>
-                    <SelectItem value="zone-3">Zone 3 - Warm</SelectItem>
-                    <SelectItem value="zone-4">Zone 4 - Mixed</SelectItem>
-                    <SelectItem value="zone-5">Zone 5 - Cool</SelectItem>
-                    <SelectItem value="zone-6">Zone 6 - Cold</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+               <div>
+                <Label>Current Project ID</Label>
+                <div className="text-sm font-mono text-muted-foreground bg-secondary/30 p-2 rounded mt-1">
+                    {projectId || "No Project Selected"}
+                </div>
+               </div>
               <div className="space-y-2">
                 <Label htmlFor="wall-area">Wall Area (m²)</Label>
-                <Input id="wall-area" type="number" defaultValue="450" />
+                <Input 
+                  id="wall-area" 
+                  type="number" 
+                  value={boundary.area}
+                  onChange={(e) => setBoundary({...boundary, area: parseFloat(e.target.value)})}
+                />
               </div>
             </CardContent>
           </Card>
@@ -144,17 +207,40 @@ export default function ThermalAnalysisPage() {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Material Name</Label>
-                      <Input
-                        defaultValue={layer.material}
-                        placeholder="e.g., Brick"
-                        className="h-9"
-                      />
+                      <Label className="text-xs">Material</Label>
+                      <Select 
+                        value={layer.material} 
+                        onValueChange={(val) => {
+                          const mat = materials.find(m => m.name === val);
+                          const newLayers = [...layers];
+                          newLayers[index] = { 
+                            ...layer, 
+                            material: val, 
+                            conductivity: mat?.conductivity?.toString() || layer.conductivity,
+                            density: mat?.density?.toString() || layer.density
+                          };
+                          setLayers(newLayers);
+                        }}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select material" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {materials.map(m => (
+                            <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Conductivity (k)</Label>
+                      <Label className="text-xs">Conductivity (k) (W/mK)</Label>
                       <Input
-                        defaultValue={layer.conductivity}
+                        value={layer.conductivity}
+                        onChange={(e) => {
+                          const newLayers = [...layers];
+                          newLayers[index].conductivity = e.target.value;
+                          setLayers(newLayers);
+                        }}
                         placeholder="W/mK"
                         className="h-9"
                       />
@@ -162,7 +248,12 @@ export default function ThermalAnalysisPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs">Density (kg/m³)</Label>
                       <Input
-                        defaultValue={layer.density}
+                        value={layer.density}
+                        onChange={(e) => {
+                          const newLayers = [...layers];
+                          newLayers[index].density = e.target.value;
+                          setLayers(newLayers);
+                        }}
                         placeholder="kg/m³"
                         className="h-9"
                       />
@@ -170,7 +261,12 @@ export default function ThermalAnalysisPage() {
                     <div className="space-y-1.5">
                       <Label className="text-xs">Thickness (mm)</Label>
                       <Input
-                        defaultValue={layer.thickness}
+                        value={layer.thickness}
+                        onChange={(e) => {
+                          const newLayers = [...layers];
+                          newLayers[index].thickness = e.target.value;
+                          setLayers(newLayers);
+                        }}
                         placeholder="mm"
                         className="h-9"
                       />
@@ -190,18 +286,28 @@ export default function ThermalAnalysisPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="inside-temp">Inside Temperature (°C)</Label>
-                  <Input id="inside-temp" type="number" defaultValue="22" />
+                  <Input 
+                    id="inside-temp" 
+                    type="number" 
+                    value={boundary.inside}
+                    onChange={(e) => setBoundary({...boundary, inside: parseFloat(e.target.value)})}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="outside-temp">Outside Temperature (°C)</Label>
-                  <Input id="outside-temp" type="number" defaultValue="-5" />
+                  <Input 
+                    id="outside-temp" 
+                    type="number" 
+                    value={boundary.outside} 
+                    onChange={(e) => setBoundary({...boundary, outside: parseFloat(e.target.value)})}
+                  />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Button onClick={runAnalysis} className="w-full gap-2" size="lg">
-            <Play className="h-4 w-4" />
+          <Button onClick={runAnalysis} className="w-full gap-2" size="lg" disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Run Thermal Analysis
           </Button>
         </div>
@@ -216,51 +322,58 @@ export default function ThermalAnalysisPage() {
             </CardHeader>
             <CardContent>
               <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={temperatureData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="position"
-                      stroke="hsl(var(--muted-foreground))"
-                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                      tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                      label={{
-                        value: "Position (mm)",
-                        position: "insideBottom",
-                        offset: -5,
-                        fill: "hsl(var(--muted-foreground))",
-                        fontSize: 12,
-                      }}
-                    />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                      tickLine={{ stroke: "hsl(var(--muted-foreground))" }}
-                      label={{
-                        value: "Temp (°C)",
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "hsl(var(--muted-foreground))",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                        color: "hsl(var(--foreground))",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="temp"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      dot={{ fill: "hsl(var(--primary))", strokeWidth: 0 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {results ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={results.tempProfile}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                      <XAxis
+                        dataKey="position"
+                        stroke="#CBD5F5"
+                        tick={{ fill: "#CBD5F5", fontSize: 12 }}
+                        tickLine={{ stroke: "#CBD5F5" }}
+                        label={{
+                          value: "Position (mm)",
+                          position: "insideBottom",
+                          offset: -5,
+                          fill: "#CBD5F5",
+                          fontSize: 12,
+                        }}
+                      />
+                      <YAxis
+                        stroke="#CBD5F5"
+                        tick={{ fill: "#CBD5F5", fontSize: 12 }}
+                        tickLine={{ stroke: "#CBD5F5" }}
+                        label={{
+                          value: "Temp (°C)",
+                          angle: -90,
+                          position: "insideLeft",
+                          fill: "#CBD5F5",
+                          fontSize: 12,
+                        }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#0f172a",
+                          border: "1px solid #334155",
+                          borderRadius: "8px",
+                          color: "#fff",
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="temp"
+                        stroke="#22C55E"
+                        strokeWidth={3}
+                        dot={{ fill: "#22C55E", strokeWidth: 0 }}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-lg">
+                    Run analysis to see temperature distribution
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -276,7 +389,7 @@ export default function ThermalAnalysisPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Heat Loss</p>
                     <p className="text-xl font-bold text-foreground">
-                      {analysisRun ? "18.4" : "--"} W/m²
+                      {results ? results.heatLoss : "--"} W
                     </p>
                   </div>
                 </div>
@@ -291,7 +404,7 @@ export default function ThermalAnalysisPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">U-Value</p>
                     <p className="text-xl font-bold text-foreground">
-                      {analysisRun ? "0.68" : "--"} W/m²K
+                      {results ? results.uValue : "--"} W/m²K
                     </p>
                   </div>
                 </div>
@@ -306,7 +419,7 @@ export default function ThermalAnalysisPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Efficiency</p>
                     <p className="text-xl font-bold text-foreground">
-                      {analysisRun ? "72" : "--"}/100
+                      {results ? results.efficiency : "--"}/100
                     </p>
                   </div>
                 </div>
@@ -314,8 +427,8 @@ export default function ThermalAnalysisPage() {
             </Card>
           </div>
 
-          {analysisRun && (
-            <Link href="/dashboard/optimization">
+          {results && (
+            <Link href={`/dashboard/optimization?projectId=${projectId}`}>
               <Button className="w-full" variant="outline">
                 Proceed to Optimization Engine
               </Button>

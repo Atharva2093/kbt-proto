@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,9 +14,93 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { User, Bell, Globe, Shield } from "lucide-react"
+import { User, Bell, Globe, Shield, Loader2 } from "lucide-react"
+
+import { useAuth } from "@/context/auth-context"
+import { toast } from "sonner"
 
 export default function SettingsPage() {
+  const { user: authUser } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dbUser, setDbUser] = useState<any>(null)
+
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    company: "",
+  })
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function fetchUser() {
+      if (!authUser) return
+      try {
+        const token = await authUser.getIdToken()
+        const res = await fetch("/api/user", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        })
+        const json = await res.json()
+        
+        if (!controller.signal.aborted) {
+          setDbUser(json)
+          const [first, ...rest] = (json.name || "").split(" ")
+          setFormData({
+            firstName: first || "",
+            lastName: rest.join(" ") || "",
+            company: json.company || "",
+          })
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          toast.error("Failed to load profile")
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchUser()
+    return () => controller.abort();
+  }, [authUser])
+
+  const handleSaveProfile = async () => {
+    setSaving(true)
+    try {
+      const token = await authUser.getIdToken()
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          name: `${formData.firstName} ${formData.lastName}`.trim(),
+          company: formData.company
+        })
+      })
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      toast.success("Profile updated")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save profile")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -43,22 +128,41 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="first-name">First Name</Label>
-                  <Input id="first-name" defaultValue="John" />
+                  <Input 
+                    id="first-name" 
+                    value={formData.firstName} 
+                    onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                    disabled={saving}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="last-name">Last Name</Label>
-                  <Input id="last-name" defaultValue="Doe" />
+                  <Input 
+                    id="last-name" 
+                    value={formData.lastName}
+                    onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                    disabled={saving}
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
-                <Input id="email" type="email" defaultValue="john.doe@example.com" />
+                <Input id="email" type="email" value={authUser?.email || ""} readOnly disabled className="opacity-70" title="Email cannot be changed" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="company">Company</Label>
-                <Input id="company" defaultValue="Acme Engineering" />
+                <Input 
+                    id="company" 
+                    placeholder="Enter your company" 
+                    value={formData.company}
+                    onChange={(e) => setFormData({...formData, company: e.target.value})}
+                    disabled={saving}
+                />
               </div>
-              <Button>Save Changes</Button>
+              <Button onClick={handleSaveProfile} disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
             </CardContent>
           </Card>
 

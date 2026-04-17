@@ -123,3 +123,68 @@
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  /* 1. Hide web UI ornaments */
+  nav, 
+  aside,
+  header,
+  footer,
+  button,
+  .no-print,
+  [role="navigation"] {
+    display: none !important;
+  }
+
+  /* 2. Reset layout for A4 paper */
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* 3. Force color consistency (overriding dark mode vars for print) */
+  :root {
+    --background: white;
+    --foreground: black;
+    --card: white;
+    --border: #e2e8f0;
+    --primary: black;
+  }
+
+  /* 4. Page break controls */
+  .break-before-page {
+    break-before: page;
+  }
+  
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+
+  /* 5. Chart container optimization */
+  .recharts-responsive-container {
+    width: 100% !important;
+    height: 300px !important;
+  }
+
+  /* 6. Text readability */
+  h1, h2, h3 {
+    color: black !important;
+  }
+  
+  p, span, td {
+    color: #1a202c !important;
+  }
+}

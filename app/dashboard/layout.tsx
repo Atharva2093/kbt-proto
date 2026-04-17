@@ -25,7 +25,7 @@ import {
   Menu,
   X,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 const sidebarLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -37,13 +37,39 @@ const sidebarLinks = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]
 
+import { useAuth } from "@/context/auth-context"
+import { useRouter } from "next/navigation"
+
+import { Badge } from "@/components/ui/badge"
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const { user, loading, logout } = useAuth()
+  const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log("[DASHBOARD] No active session, redirecting to login");
+      router.push("/");
+    }
+  }, [user, loading, router]);
+
+  // Prevent flicker: Wait for loading OR wait for redirect if no user
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Thermometer className="h-12 w-12 animate-pulse text-primary" />
+          <p className="text-sm font-medium text-muted-foreground">Verifying Session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -122,19 +148,11 @@ export default function DashboardLayout({
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  Demo Project
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem>Demo Project</DropdownMenuItem>
-                <DropdownMenuItem>Office Building A</DropdownMenuItem>
-                <DropdownMenuItem>Residential Complex</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="hidden sm:block">
+              <Badge variant="outline" className="text-xs font-normal">
+                Default Project
+              </Badge>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" className="relative">
@@ -143,16 +161,37 @@ export default function DashboardLayout({
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <User className="h-4 w-4" />
-                  </div>
+                <Button variant="ghost" className="relative h-10 w-10 btn-secondary rounded-full border-2 border-primary/20 p-0 overflow-hidden">
+                   {user?.photoURL ? (
+                     <img src={user.photoURL} alt={user.email || "User"} className="h-full w-full object-cover" />
+                   ) : (
+                     <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary font-bold">
+                       {user?.email?.[0].toUpperCase()}
+                     </div>
+                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem>Profile</DropdownMenuItem>
-                <DropdownMenuItem>Settings</DropdownMenuItem>
-                <DropdownMenuItem>Logout</DropdownMenuItem>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="flex items-center justify-start gap-2 p-2">
+                  <div className="flex flex-col space-y-0.5">
+                    <p className="text-sm font-medium leading-none">{user?.displayName || "User"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email}
+                    </p>
+                  </div>
+                </div>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/settings" className="cursor-pointer">Profile</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={async () => {
+                    await logout()
+                    router.push("/")
+                  }} 
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                >
+                  Logout
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
