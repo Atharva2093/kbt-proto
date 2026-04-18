@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-server-utils";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -20,10 +21,13 @@ export async function POST(req: Request) {
       }
     });
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    if (!process.env.GOOGLE_AI_API_KEY) {
+      return new Response("Missing API Key", { status: 500 });
+    }
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
     
     if (!apiKey) {
-      console.warn("[AI_OPTIMIZATION] GEMINI_API_KEY missing, using mock response");
+      console.warn("[AI_OPTIMIZATION] GOOGLE_AI_API_KEY missing, using mock response");
       const mock = await getMockOptimization(projectId, user.id);
       return NextResponse.json(mock);
     }
