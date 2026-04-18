@@ -1,4 +1,5 @@
 "use client"
+export const dynamic = "force-dynamic";
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -75,15 +76,23 @@ export default function LandingPage() {
             <Button 
               variant="outline" 
               className="hidden sm:inline-flex"
-              onClick={handleLogin}
+              onClick={() => {
+                console.log("[DEBUG] Login button clicked");
+                handleLogin();
+              }}
               disabled={loading}
             >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Login
             </Button>
-            <Link href="/dashboard">
-              <Button>Try Demo</Button>
-            </Link>
+            <Button 
+              onClick={() => {
+                console.log("[DEBUG] Top Navbar Demo clicked");
+                router.push("/dashboard");
+              }}
+            >
+              Try Demo
+            </Button>
           </div>
         </div>
       </header>
@@ -103,11 +112,16 @@ export default function LandingPage() {
                 AI-powered platform that analyzes heat transfer in composite walls, recommends optimal materials, and generates a ready-to-purchase procurement list.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
-                <Link href="/dashboard">
-                  <Button size="lg" className="gap-2">
-                    Try Demo <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
+                <Button 
+                  size="lg" 
+                  className="gap-2"
+                  onClick={() => {
+                    console.log("[DEBUG] Hero Section Demo clicked");
+                    router.push("/dashboard");
+                  }}
+                >
+                  Try Demo <ArrowRight className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" size="lg">
                   View Prototype
                 </Button>
