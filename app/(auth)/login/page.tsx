@@ -1,4 +1,5 @@
 "use client"
+export const dynamic = "force-dynamic";
 
 import { useState } from "react"
 
@@ -19,6 +20,10 @@ export default function LoginPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  })
   
   // Re-use logic from landing page for consistency
   const handleGoogleLogin = async () => {
